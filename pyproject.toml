@@ -1,0 +1,13 @@
+[project]
+name = "college-expense-tracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "mcp[cli]>=1.24.0",
+    "pandas>=2.3.3",
+    "pillow>=12.0.0",
+    "pytesseract>=0.3.13",
+]
