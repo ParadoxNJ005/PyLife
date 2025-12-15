@@ -82,9 +82,6 @@ def log_debt(lender, borrower, amount, description):
     """Logs a debt between two people (e.g., Me -> Pratham)."""
     try:
         borrower_id = get_or_create_friend(borrower)
-        # Assuming 'me' is the user, we don't need an ID for the lender if it's the user
-        # But for your DB schema, let's assume 'me' is ID 0 or handled separately.
-        # For this script, we'll just focus on the debt record.
 
         conn = get_connection()
         cursor = conn.cursor()

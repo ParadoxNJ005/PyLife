@@ -1,86 +1,91 @@
 import sqlite3
-import pandas as pd
-import matplotlib.pyplot as plt
 import os
-from datetime import datetime
+import pandas as pd
+from datetime import date
 from modules.database import get_connection
 
-# Define output folder for graphs
-GRAPH_FOLDER = os.path.join('reports', 'graphs')
-if not os.path.exists(GRAPH_FOLDER):
-    os.makedirs(GRAPH_FOLDER)
+# --- CONFIGURATION ---
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+REPORTS_FOLDER = os.path.join(PROJECT_ROOT, 'reports')
+EXCEL_FILE = os.path.join(REPORTS_FOLDER, 'data.xlsx')
+
+
+def export_to_excel():
+    """Fetches all data and saves it to reports/data.xlsx"""
+    if not os.path.exists(REPORTS_FOLDER):
+        os.makedirs(REPORTS_FOLDER)
+
+    conn = get_connection()
+    try:
+        # 1. Fetch Expenses
+        df_expenses = pd.read_sql_query("SELECT * FROM expenses", conn)
+
+        # 2. Fetch Debts
+        query_debts = """
+        SELECT d.id, d.date, f.name as borrower, d.amount, d.description, d.status 
+        FROM debts d
+        JOIN friends f ON d.borrower_id = f.id
+        """
+        df_debts = pd.read_sql_query(query_debts, conn)
+
+        # 3. Write to Excel
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl') as writer:
+            df_expenses.to_excel(writer, sheet_name='Expenses', index=False)
+            df_debts.to_excel(writer, sheet_name='Debts', index=False)
+
+        return f"📊 Excel file saved at: {EXCEL_FILE}"
+    except Exception as e:
+        return f"❌ Error generating Excel: {str(e)}"
+    finally:
+        conn.close()
 
 
 def generate_monthly_report(month=None, year=None):
     """
-    Generates a report for a specific month.
-    If no month is provided, defaults to the current month.
+    Generates the Excel file and returns a text summary for Claude.
     """
-    # Default to current date if not specified
-    now = datetime.now()
-    if month is None: month = now.month
-    if year is None: year = now.year
+    # 1. Create the Excel File
+    excel_status = export_to_excel()
 
-    # Format 'YYYY-MM' for SQL filtering
-    month_str = f"{year}-{month:02d}"
-    print(f"\n📊 --- Generating Report for {month_str} ---")
-
+    # 2. Build the Text Report
     conn = get_connection()
+    cursor = conn.cursor()
 
-    # 1. FETCH DATA using Pandas
-    query = "SELECT date, item, amount, category, is_healthy FROM expenses WHERE date LIKE ?"
-    df = pd.read_sql_query(query, conn, params=(f"{month_str}%",))
-    conn.close()
+    if month is None or year is None:
+        today = date.today()
+        month = today.month
+        year = today.year
 
-    if df.empty:
-        print("❌ No data found for this month.")
-        return "No Data"
+    # Filter by YYYY-MM
+    date_pattern = f"{year}-{month:02d}%"
+    output = []  # We will build the response string here
 
-    # --- PART A: THE DATA TABLES ---
+    output.append(f"--- 📅 Monthly Report for {month}/{year} ---")
+    output.append(excel_status)  # Add the Excel confirmation line
 
-    # Summary by Category
-    category_summary = df.groupby('category')['amount'].sum().sort_values(ascending=False)
+    try:
+        cursor.execute("SELECT amount, is_healthy FROM expenses WHERE date LIKE ?", (date_pattern,))
+        rows = cursor.fetchall()
 
-    # Summary by Health (Mapping 1/0 to 'Healthy'/'Unhealthy')
-    df['health_label'] = df['is_healthy'].map({1: 'Healthy', 0: 'Unhealthy'})
-    health_summary = df.groupby('health_label')['amount'].sum()
+        total_spent = sum(r['amount'] for r in rows)
+        healthy_spent = sum(r['amount'] for r in rows if r['is_healthy'])
+        unhealthy_spent = sum(r['amount'] for r in rows if not r['is_healthy'])
 
-    print("\n💰 EXPENSE BREAKDOWN (Data Table):")
-    print(category_summary.to_string())
-    print(f"\nTotal Spent: ${df['amount'].sum():.2f}")
+        output.append(f"💰 Total Spent:   ₹{total_spent:,.2f}")
+        output.append(f"🥗 Healthy:       ₹{healthy_spent:,.2f}")
+        output.append(f"🍔 Unhealthy:     ₹{unhealthy_spent:,.2f}")
 
-    # --- PART B: THE GRAPHS ---
+        if total_spent > 0:
+            h_pct = (healthy_spent / total_spent) * 100
+            output.append(f"📈 Diet Score:    {h_pct:.1f}% Healthy Spending")
+        else:
+            output.append("No expenses recorded for this month.")
 
-    # Graph 1: Spending by Category (Bar Chart)
-    plt.figure(figsize=(10, 6))
-    category_summary.plot(kind='bar', color='skyblue', edgecolor='black')
-    plt.title(f'Expenses by Category ({month_str})')
-    plt.ylabel('Amount ($)')
-    plt.xlabel('Category')
-    plt.xticks(rotation=45)
-    plt.tight_layout()
+    except sqlite3.Error as e:
+        output.append(f"Database error: {e}")
+    finally:
+        conn.close()
 
-    # Save Graph 1
-    cat_graph_path = os.path.join(GRAPH_FOLDER, f"expense_category_{month_str}.png")
-    plt.savefig(cat_graph_path)
-    print(f"\n📈 Category Graph saved to: {cat_graph_path}")
-    plt.close()
-
-    # Graph 2: Health Breakdown (Pie Chart)
-    if not health_summary.empty:
-        plt.figure(figsize=(6, 6))
-        colors = ['#ff9999', '#66b3ff']  # Red for unhealthy, Blue for healthy (approx)
-        health_summary.plot(kind='pie', autopct='%1.1f%%', startangle=90, colors=colors)
-        plt.title(f'Health Audit ({month_str})')
-        plt.ylabel('')  # Hide y-label
-
-        # Save Graph 2
-        health_graph_path = os.path.join(GRAPH_FOLDER, f"health_audit_{month_str}.png")
-        plt.savefig(health_graph_path)
-        print(f"🍏 Health Graph saved to: {health_graph_path}")
-        plt.close()
-
-    return {
-        "total_spent": df['amount'].sum(),
-        "graphs": [cat_graph_path, health_graph_path]
-    }
+    # Join list into a single string to send back to Claude
+    return "\n".join(output)
