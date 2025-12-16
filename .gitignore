@@ -1,0 +1,7 @@
+# Security (Block the secrets!)
+.env
+.venv
+venv/
+__pycache__/
+*.pyc
+.DS_Store

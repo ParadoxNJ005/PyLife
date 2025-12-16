@@ -1,100 +1,71 @@
-import json
-import os
-import sqlite3
 from datetime import date
-from modules.database import get_connection
-
-# --- HELPER: JSON HEALTH DATA ---
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
-JSON_FILE = os.path.join(PROJECT_ROOT, 'data', 'item_health.json')
+from modules.database import get_client
 
 
-def load_health_data():
-    if not os.path.exists(JSON_FILE): return {}
-    with open(JSON_FILE, 'r') as f: return json.load(f)
-
-
-def save_health_data(data):
-    with open(JSON_FILE, 'w') as f: json.dump(data, f, indent=4)
-
+# --- CORE FUNCTIONS (Cloud Version) ---
 
 def check_item_health(item):
-    data = load_health_data()
-    return data.get(item.lower().strip(), None)
+    """Checks Cloud DB for item health status."""
+    supabase = get_client()
+    try:
+        # Search for the item (case-insensitive)
+        # .ilike ensures we find "Burger" even if you search "burger"
+        response = supabase.table("item_health").select("is_healthy").ilike("item", item.strip()).execute()
+        if response.data:
+            return response.data[0]['is_healthy']
+    except Exception:
+        pass
+    return None
 
 
 def learn_item_health(item, is_healthy):
-    data = load_health_data()
-    data[item.lower().strip()] = is_healthy
-    save_health_data(data)
-
-
-# --- CORE FUNCTIONS ---
-
-def get_or_create_friend(name):
-    """Finds a friend's ID or creates them if they don't exist."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    """Saves item health status to Cloud DB."""
+    supabase = get_client()
     try:
-        # 1. Try to find friend
-        cursor.execute("SELECT id FROM friends WHERE name = ?", (name,))
-        row = cursor.fetchone()
+        clean_item = item.lower().strip()
+        data = {"item": clean_item, "is_healthy": is_healthy}
 
-        if row:
-            return row['id']
-
-        # 2. If not found, create new friend
-        cursor.execute("INSERT INTO friends (name) VALUES (?)", (name,))
-        conn.commit()
-        return cursor.lastrowid
-    finally:
-        conn.close()
+        # 'upsert' means: Insert if new, Update if exists
+        supabase.table("item_health").upsert(data, on_conflict="item").execute()
+        print(f"🧠 Cloud Brain: Learned that '{clean_item}' is {'Healthy' if is_healthy else 'Unhealthy'}")
+    except Exception as e:
+        print(f"Error learning item: {e}")
 
 
 def log_expense(item, amount, category="Food", is_healthy=None):
-    """Logs a personal expense."""
-    # 1. Health Check
+    """Logs a personal expense to Supabase."""
+
+    # 1. Strict Health Check
     if is_healthy is None:
         known_status = check_item_health(item)
-        if known_status is None:
-            return {"status": "NEEDS_CLARIFICATION", "item": item, "amount": amount}
-        is_healthy = known_status
+        if known_status is not None:
+            is_healthy = known_status
+        else:
+            # If we don't know, stop and ask the user
+            return {
+                "status": "NEEDS_CLARIFICATION",
+                "item": item,
+                "amount": amount
+            }
 
-    # 2. DB Insert
-    conn = get_connection()
-    cursor = conn.cursor()
+    # 2. Supabase Insert
+    supabase = get_client()
+    today = date.today().strftime("%Y-%m-%d")
+
+    data = {
+        "date": today,
+        "item": item,
+        "amount": amount,
+        "category": category,
+        "is_healthy": is_healthy
+    }
+
     try:
-        today = date.today().strftime("%Y-%m-%d")
-        cursor.execute('''
-            INSERT INTO expenses (date, item, amount, category, is_healthy)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (today, item, amount, category, 1 if is_healthy else 0))
-        conn.commit()
-        return {"status": "SUCCESS", "message": f"Logged {item} (₹{amount})"}
+        # .insert() sends data to the cloud 'expenses' table
+        supabase.table("expenses").insert(data).execute()
+
+        health_str = "Healthy" if is_healthy else "Unhealthy"
+        return {"status": "SUCCESS", "message": f"☁️ Logged to Cloud: {item} (₹{amount}) as {health_str}"}
+
     except Exception as e:
-        return {"status": "ERROR", "message": str(e)}
-    finally:
-        conn.close()
-
-
-def log_debt(lender, borrower, amount, description):
-    """Logs a debt between two people (e.g., Me -> Pratham)."""
-    try:
-        borrower_id = get_or_create_friend(borrower)
-
-        conn = get_connection()
-        cursor = conn.cursor()
-        today = date.today().strftime("%Y-%m-%d")
-
-        # Note: You might need to adjust logic if 'lender' is 'me' vs a friend
-        cursor.execute('''
-            INSERT INTO debts (date, borrower_id, lender_id, amount, description)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (today, borrower_id, 0, amount, description))  # 0 = User/Me
-
-        conn.commit()
-        conn.close()
-        return {"status": "SUCCESS", "message": f"Recorded: {borrower} owes ₹{amount} for {description}"}
-    except Exception as e:
-        return {"status": "ERROR", "message": str(e)}
+        return {"status": "ERROR", "message": f"Supabase Error: {str(e)}"}

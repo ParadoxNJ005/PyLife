@@ -1,15 +1,11 @@
 import argparse
-import sys
 from modules import finance_manager, social_manager, report_generator, ocr_handler
-from modules.database import initialize_db
 
+# Note: We removed 'initialize_db' because Supabase tables are already created online.
 
 def main():
-    # 1. Ensure DB exists before doing anything
-    initialize_db()
-
     # Initialize the parser
-    parser = argparse.ArgumentParser(description="Personal Finance & Health Tracker CLI")
+    parser = argparse.ArgumentParser(description="FiscalFit Cloud CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # --- COMMAND: log_expense ---
@@ -58,7 +54,7 @@ def main():
         # Convert integer 1/0 to Boolean if provided
         is_healthy = bool(args.healthy) if args.healthy is not None else None
 
-        # 1. Try to log the expense
+        # 1. Try to log the expense to Cloud
         result = finance_manager.log_expense(args.item, args.amount, args.cat, is_healthy)
 
         # 2. Check if we need clarification (The Interactive Update)
@@ -69,12 +65,12 @@ def main():
             while True:
                 user_choice = input("   Enter 1 or 0: ").strip()
                 if user_choice in ['1', '0']:
-                    # Learn the new item
+                    # Learn the new item (Locally or Cloud)
                     is_healthy_bool = (user_choice == '1')
                     finance_manager.learn_item_health(args.item, is_healthy_bool)
 
                     # Retry logging
-                    print("   Saving...")
+                    print("   Saving to Cloud...")
                     result = finance_manager.log_expense(args.item, args.amount, args.cat, is_healthy_bool)
                     break
                 else:
@@ -87,10 +83,10 @@ def main():
             print(f"❌ {result.get('message', 'Unknown Error')}")
 
     elif args.command == "add_friend":
-        social_manager.add_friend(args.name, args.phone)
+        # Now returns a string, so we print it
+        print(social_manager.add_friend(args.name, args.phone))
 
     elif args.command == "log_debt":
-        # Note: Ensure social_manager returns a status/string to print
         res = social_manager.log_debt(args.borrower, args.lender, args.amount, args.desc)
         print(res)
 
@@ -99,11 +95,12 @@ def main():
         print(res)
 
     elif args.command == "report":
-        report_generator.generate_monthly_report(args.month, args.year)
+        # Now returns the summary text, so we print it
+        print(report_generator.generate_monthly_report(args.month, args.year))
 
     elif args.command == "list_friends":
         friends = social_manager.list_friends()
-        print("--- Friends List ---")
+        print("--- Friends List (Cloud) ---")
         for f in friends:
             print(f"- {f}")
 
@@ -112,7 +109,6 @@ def main():
 
     else:
         parser.print_help()
-
 
 if __name__ == "__main__":
     main()
