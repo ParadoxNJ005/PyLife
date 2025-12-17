@@ -1,10 +1,10 @@
-# FiscalFit Cloud 🏋️‍♂️💸
+# PyLife Cloud 🏋️‍♂️💸
 
 **The AI Agent that tracks your Wallet and your Waistline.**
 
-FiscalFit is a robust **MCP (Model Context Protocol) Server** that turns **Claude Desktop** into an intelligent personal finance and diet assistant. It allows you to log expenses, track debts with friends, and monitor your eating habits using simple natural language.
+PyLife is a robust **MCP (Model Context Protocol) Server** that turns **Claude Desktop** into an intelligent personal finance and diet assistant. It allows you to log expenses, track debts with friends, and monitor your eating habits using simple natural language.
 
-Unlike standard trackers, FiscalFit features a **"Human-in-the-Loop" learning system**—if it doesn't know if a food item is healthy, it asks you, learns the answer, and remembers it forever.
+Unlike standard trackers, PyLife features a **"Human-in-the-Loop" learning system**—if it doesn't know if a food item is healthy, it asks you, learns the answer, and remembers it forever.
 
 ---
 
@@ -104,3 +104,4 @@ User: "I bought a Matcha Latte for 8." Claude: "STOP: I don't know if 'Matcha La
 
 📄 License
 This project is open-source. Feel free to use it to get your finances (and diet) in shape!
+
