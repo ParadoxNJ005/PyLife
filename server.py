@@ -1,10 +1,14 @@
 from mcp.server.fastmcp import FastMCP
-from modules import finance_manager, social_manager, report_generator
+from modules import finance_manager, social_manager
+from modules.database import get_client
 
 # Initialize the MCP Server
-# You can give it a custom name like "FiscalFit"
 mcp = FastMCP("Finance-Tracker")
 
+
+# ==============================================================================
+# 📝 SECTION 1: DATA ENTRY TOOLS (WRITE)
+# ==============================================================================
 
 # --- TOOL 1: Log Personal Expense ---
 @mcp.tool()
@@ -14,10 +18,8 @@ def log_personal_expense(item: str, amount: float, category: str = "Food", is_he
     IMPORTANT: If you don't know if the item is healthy, pass is_healthy=None.
     The system will check the database and tell you if it needs clarification.
     """
-    # Call the logic we built in finance_manager
     result = finance_manager.log_expense(item, amount, category, is_healthy)
 
-    # Handle the interactive "Unknown Health" case
     if result.get("status") == "NEEDS_CLARIFICATION":
         return (
             f"STOP: I cannot log '{item}' yet because I don't know if it is healthy. "
@@ -25,7 +27,6 @@ def log_personal_expense(item: str, amount: float, category: str = "Food", is_he
             f"Once they answer, use the 'learn_food_health' tool."
         )
 
-    # Success case
     return result["message"]
 
 
@@ -53,10 +54,10 @@ def add_friend(name: str, phone: str = None) -> str:
 def log_debt(borrower: str, lender: str, amount: float, description: str = "Loan") -> str:
     """
     Logs that one person owes another money.
-    Example: lender='Me', borrower='Pratham', amount=90
+    - If user owes someone: borrower='Me', lender='Name'
+    - If someone owes user: borrower='Name', lender='Me'
     """
     result = social_manager.log_debt(borrower, lender, amount, description)
-    # Ensure we return a string, even if the module returned a dict
     if isinstance(result, dict):
         return result.get("message", str(result))
     return str(result)
@@ -72,18 +73,77 @@ def record_payment(payer: str, receiver: str, amount: float) -> str:
     return str(result)
 
 
-# --- TOOL 6: Generate Report (Excel + Summary) ---
+# ==============================================================================
+# 🧠 SECTION 2: SMART ANALYST TOOLS (READ / VIEW)
+# ==============================================================================
+
+# --- TOOL 6: Social Finance Manager (Unified) ---
 @mcp.tool()
-def generate_monthly_report(month: int = None, year: int = None) -> str:
+def check_social_finances(query_type: str, person: str = None) -> str:
     """
-    Generates a text summary AND creates an Excel file (reports/data.xlsx).
-    Returns the summary text to be displayed to the user.
+    The Master Tool for social finances. Can answer history OR balance questions.
+
+    Args:
+        query_type: 'BALANCE' for questions like "Who owes me?", "How much does X owe?".
+                    'HISTORY' for questions like "History with X", "What payments did X make?".
+        person: (Optional) Name of specific person to filter by.
     """
-    # This calls the function we updated in the previous step
-    # It returns a ready-to-print string containing the Excel path and stats
-    return report_generator.generate_monthly_report(month, year)
+    supabase = get_client()
+
+    # RPC call to Supabase
+    try:
+        response = supabase.rpc("query_social_ledger", {
+            "target_person": person,
+            "query_mode": query_type.upper()
+        }).execute()
+
+        data = response.data
+        if not data:
+            return f"No records found for '{person or 'everyone'}' in mode {query_type}."
+
+        # Format Output
+        lines = [f"--- Social Report ({query_type}) ---"]
+        for row in data:
+            amt = f"₹{row['amount']}"
+            if query_type.upper() == "BALANCE":
+                lines.append(f"💰 {row['person']} owes: {amt}")
+            else:
+                lines.append(f"{row['date']} | {row['person']} | {row['description']} | {amt}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Database Error: {str(e)}"
+
+
+# --- TOOL 7: Expense Analytics ---
+@mcp.tool()
+def analyze_spending(month: str = None) -> str:
+    """
+    Analyzes personal spending by Category and Health.
+
+    Args:
+        month: Format 'YYYY-MM' (e.g. '2023-11'). Defaults to current month if omitted.
+    """
+    supabase = get_client()
+
+    try:
+        # RPC call
+        response = supabase.rpc("get_expense_stats", {"target_month": month}).execute()
+        data = response.data
+
+        if not data:
+            return f"No spending data found for {month}."
+
+        lines = [f"--- Spending Analysis ({month or 'Current Month'}) ---"]
+        for row in data:
+            lines.append(f"• {row['category']} ({row['health_status']}): ₹{row['total_spent']}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Database Error: {str(e)}"
 
 
 if __name__ == "__main__":
-    # This keeps the server running so Claude can connect to it
     mcp.run()
