@@ -5,26 +5,33 @@ from modules.database import get_client
 def normalize_name(name):
     """Standardize names to lowercase/stripped."""
     if not name: return ""
-    return name.lower().strip()
+    return str(name).lower().strip()
 
 
 def get_friend_id(name):
-    """Resolves name to ID. Handles 'Me' -> 0."""
+    """
+    Resolves name to ID.
+    Handles 'Me' -> Fetches the actual ID for 'Me' from the database.
+    """
     clean_name = normalize_name(name)
 
-    # 1. Handle Self (User)
+    # 1. Handle Self (User) - Redirect to "Me"
     if clean_name in ["me", "i", "myself", "user", "self", "you"]:
-        return 0
+        clean_name = normalize_name("Me")
 
-    # 2. Query Database (Case-Insensitive)
+    # 2. Query Database
     supabase = get_client()
     try:
+        # Fetch all friends to find the matching name
+        # Optimization: For large lists, we could use .ilike('name', clean_name)
         response = supabase.table("friends").select("id, name").execute()
+
         for f in response.data:
             if normalize_name(f['name']) == clean_name:
                 return f['id']
+
     except Exception as e:
-        print(f"Error looking up friend: {e}")
+        print(f"❌ Error looking up friend: {e}")
 
     return None
 
@@ -39,10 +46,7 @@ def add_friend(name, phone=None):
 
     try:
         data = {"name": clean_name, "phone": phone}
-
-        # FIX: Removed .select() - matches working log_expense pattern
         supabase.table("friends").insert(data).execute()
-
         return f"✅ Friend added: {clean_name}"
 
     except Exception as e:
@@ -60,50 +64,39 @@ def list_friends():
 
 def log_debt(borrower_name, lender_name, amount, description="General Loan"):
     try:
-        print(f"DEBUG: Processing Debt - '{borrower_name}' owes '{lender_name}'")
+        print(f"Processing Debt: '{borrower_name}' owes '{lender_name}'")
 
-        # --- 1. HARDCODED "ME" CHECK (The Fix) ---
+        # --- RESOLVE IDS ---
+        # No more hardcoded 0. We ask the database for the IDs.
+        lender_id = get_friend_id(lender_name)
+        borrower_id = get_friend_id(borrower_name)
 
-        # Check LENDER
-        if lender_name.lower().strip() in ["me", "i", "myself", "user"]:
-            lender_id = 0
-            print("   -> Lender Identified as USER (ID 0)")
-        else:
-            lender_id = get_friend_id(lender_name)
-
-        # Check BORROWER
-        if borrower_name.lower().strip() in ["me", "i", "myself", "user"]:
-            borrower_id = 0
-            print("   -> Borrower Identified as USER (ID 0)")
-        else:
-            borrower_id = get_friend_id(borrower_name)
-
-        # --- 2. VALIDATION ---
+        # --- VALIDATION ---
         if borrower_id is None:
             return f"❌ Error: Friend '{borrower_name}' not found. Please add them first."
         if lender_id is None:
             return f"❌ Error: Friend '{lender_name}' not found. Please add them first."
 
-        # --- 3. SAVE TO DB ---
+        # --- SAVE TO DB ---
         supabase = get_client()
         today = date.today().strftime("%Y-%m-%d")
 
         data = {
             "date": today,
-            "borrower_id": borrower_id,
-            "lender_id": lender_id,
+            "borrower_id": borrower_id,  # Using correct ID (e.g., 11 or 13)
+            "lender_id": lender_id,  # Using correct ID
             "amount": amount,
             "description": description,
             "status": "Active"
         }
 
-        # Standard insert (No .select() to avoid crashes)
         supabase.table("debts").insert(data).execute()
 
         return f"✅ Success: {borrower_name} owes {lender_name} ₹{amount}"
 
     except Exception as e:
         return f"❌ Database Exception: {str(e)}"
+
 
 def record_payment(payer_name, receiver_name, payment_amount):
     try:
@@ -114,7 +107,7 @@ def record_payment(payer_name, receiver_name, payment_amount):
         if payer_id is None or receiver_id is None:
             return "❌ Error: Friend not found."
 
-        # Find active debts
+        # Find active debts where the payer is the borrower
         res = supabase.table("debts").select("id, amount") \
             .eq("borrower_id", payer_id) \
             .eq("lender_id", receiver_id) \
@@ -147,7 +140,6 @@ def record_payment(payer_name, receiver_name, payment_amount):
                     "amount": pay_chunk
                 }
 
-                # FIX: Removed .select() - matches working log_expense pattern
                 supabase.table("payments").insert(p_data).execute()
 
                 if (already_paid + pay_chunk) >= float(debt['amount']):

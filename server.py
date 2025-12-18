@@ -145,5 +145,66 @@ def analyze_spending(month: str = None) -> str:
         return f"Database Error: {str(e)}"
 
 
+# ==============================================================================
+# 💪 SECTION 3: FITNESS & PROTEIN TOOLS
+# ==============================================================================
+
+@mcp.tool()
+def log_workout(type: str = "General") -> str:
+    """
+    Logs that you went to the gym.
+    Args:
+        type: "Push", "Pull", "Legs", "Cardio", etc.
+    """
+    supabase = get_client()
+    try:
+        supabase.table("workouts").insert({"workout_type": type}).execute()
+        return f"💪 Workout logged: {type}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def log_protein_intake(item_name: str, protein_g: int) -> str:
+    """
+    Logs food and its protein content.
+
+    CRITICAL INSTRUCTION FOR AI:
+    If the user says "I ate 2 eggs" or "I had a chicken breast", they will NOT provide the protein amount.
+    YOU (the AI) must ESTIMATE the protein grams based on standard nutritional data and pass it to 'protein_g'.
+
+    Example:
+    User: "I ate a bowl of greek yogurt."
+    AI Action: Call log_protein_intake("Greek Yogurt", 15)
+    """
+    supabase = get_client()
+    try:
+        # We trust the AI's estimation and save it directly
+        supabase.table("nutrition_logs").insert({
+            "item_name": item_name,
+            "protein_g": protein_g
+        }).execute()
+        return f"🍗 Logged: {item_name} (~{protein_g}g protein)"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def check_fitness_stats(days: int = 7) -> str:
+    """Checks gym attendance and total protein for the last X days."""
+    supabase = get_client()
+    try:
+        res = supabase.rpc("get_fitness_stats", {"days_back": days}).execute()
+        if not res.data: return "No data found."
+
+        lines = [f"--- Fitness (Last {days} Days) ---"]
+        for r in res.data:
+            gym = "✅ GYM" if r['gym_count'] > 0 else "❌ Rest"
+            lines.append(f"{r['date']}: {gym} | {r['protein_total']}g Protein")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+
 if __name__ == "__main__":
     mcp.run()
