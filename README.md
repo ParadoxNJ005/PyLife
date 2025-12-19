@@ -6,6 +6,10 @@ PyLife is a robust **MCP (Model Context Protocol) Server** that turns **Claude D
 
 Unlike standard trackers, PyLife features a **"Human-in-the-Loop" learning system**—if it doesn't know if a food item is healthy, it asks you, learns the answer, and remembers it forever.
 
+https://claude.ai/public/artifacts/6d611e81-3263-4c90-b01e-daf3cca99ed6
+
+https://claude.ai/public/artifacts/6568233e-e5e0-4bd9-a292-69c6b0972f70
+
 ---
 
 ## 🚀 Key Features
@@ -104,4 +108,5 @@ User: "I bought a Matcha Latte for 8." Claude: "STOP: I don't know if 'Matcha La
 
 📄 License
 This project is open-source. Feel free to use it to get your finances (and diet) in shape!
+
 
